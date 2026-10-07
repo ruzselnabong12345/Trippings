@@ -55,8 +55,8 @@ button.danger{color:#ffb4a6}
   <nav>
     <b>2D Lottery</b>
     <div class="links">
-      <button class="tab on" id="tabDisplay" onclick="showPage('display')">Results</button>
-      <button class="tab" id="tabAdmin" onclick="showPage('admin')">Admin</button>
+      <button class="tab on" id="tabDisplay">Results</button>
+      <button class="tab" id="tabAdmin">Admin</button>
     </div>
   </nav>
 
@@ -118,29 +118,32 @@ const DRAWS = [["morning","Morning","9:00 AM"],["afternoon","Afternoon","1:00 PM
 const AUTH = "lottery2d_admin", TOKEN_KEY = "lottery2d_ghtoken";
 let memAuth = false;
 
-function $ (id) { return document.getElementById(id); }
+const $ = id => document.getElementById(id);
 
+// --- TAB SWITCHING LOGIC ---
 function showPage(page) {
-  const isAdminPage = (page === 'admin');
-  $('pageAdmin').classList.toggle('hide', !isAdminPage);$('pageDisplay').classList.toggle('hide', isAdminPage);
-  $('tabAdmin').classList.toggle('on', isAdminPage);$('tabDisplay').classList.toggle('on', !isAdminPage);
+  const isAdmin = (page === 'admin');
+  $('pageAdmin').classList.toggle('hide', !isAdmin);$('pageDisplay').classList.toggle('hide', isAdmin);
+  $('tabAdmin').classList.toggle('on', isAdmin);$('tabDisplay').classList.toggle('on', !isAdmin);
 
-  if (isAdminPage) {
+  if (isAdmin) {
     renderAdmin();
   } else {
     renderDisplay();
   }
 }
 
+$('tabDisplay').onclick = () => showPage('display');$('tabAdmin').onclick = () => showPage('admin');
+
 function toBase64(str) { return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1))); }
 
 async function fetchFromGitHub() {
   try {
-    const res = await fetch(`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/main/results.json?cache=` + Date.now());
+    const res = await fetch(`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/main/results.json?t=` + Date.now());
     if (!res.ok) return {};
     return await res.json();
   } catch (e) {
-    console.error("Error fetching results.json:", e);
+    console.error("Failed to fetch results.json:", e);
     return {};
   }
 }
@@ -178,7 +181,7 @@ async function saveToGitHub(newContent) {
 
   if (!putRes.ok) {
     const err = await putRes.json();
-    throw new Error(err.message || "Failed to update file on GitHub.");
+    throw new Error(err.message || "Failed to save file to GitHub.");
   }
 }
 
@@ -209,7 +212,8 @@ function histTable(data, withDelete){
 }
 
 async function renderDisplay(){
-  const data = await fetchFromGitHub(), dates = Object.keys(data).sort();
+  const data = await fetchFromGitHub();
+  const dates = Object.keys(data).sort();
   const t = dates.length ? dates[dates.length-1] : todayStr(), row = data[t] || {};
   $("todayLabel").textContent = (t===todayStr() ? "Today, " : "Latest results, ") + pretty(t);
   $("todayDraws").innerHTML = DRAWS.map(x=>`<div class="draw"><div class="name">${x[1]}</div><div class="time">${x[2]}</div>${pair(row,x[0])}</div>`).join("");
