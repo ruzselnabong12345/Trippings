@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>2D Lottery Results</title>
+<!-- Supabase Client JS Library -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#10281f;--panel:#17382c;--line:#2c5a49;--ink:#f6efdc;--mute:#9fb8ab;--gold:#f0b429;--red:#e0553f;--ball:#fff8e6}
 *{box-sizing:border-box}
@@ -93,30 +95,56 @@ button.danger{color:#ffb4a6}
         <p class="msg" id="saveMsg"></p>
       </div>
       <h2>Numbers posted each day</h2>
-      <div class="panel scroll" id="adminHist"></div>
+      <div class="panel scroll" id="adminHist">Loading database...</div>
     </div>
   </section>
 
   <!-- PAGE 2: DISPLAY -->
   <section id="pageDisplay" class="hide">
     <h1>Winning numbers</h1>
-    <p class="sub" id="todayLabel"></p>
+    <p class="sub" id="todayLabel">Loading latest results...</p>
     <div class="draws" id="todayDraws"></div>
     <h2>Previous days</h2>
-    <div class="panel scroll" id="pubHist"></div>
+    <div class="panel scroll" id="pubHist">Loading...</div>
   </section>
 </div>
 
 <script>
-// ---- Settings: change the admin PIN here ----
-const ADMIN_PIN = "1234";
-// ---------------------------------------------
-const DRAWS = [["morning","Morning","9:00 AM"],["afternoon","Afternoon","1:00 PM"],["night","Night","8:00 PM"]];
-const KEY = "lottery2d_results", AUTH = "lottery2d_admin";
-let mem = {}, memAuth = false;
+// ---- Database Configuration ----
+const SUPABASE_URL = "YOUR_SUPABASE_URL_HERE";
+const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY_HERE";
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-function load(){ try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ return mem; } }
-function save(d){ mem = d; try{ localStorage.setItem(KEY, JSON.stringify(d)); }catch(e){} }
+// ---- Settings ----
+const ADMIN_PIN = "1234";
+const DRAWS = [["morning","Morning","9:00 AM"],["afternoon","Afternoon","1:00 PM"],["night","Night","8:00 PM"]];
+const AUTH = "lottery2d_admin";
+let memAuth = false;
+
+// Auto-initialize table schema if needed
+async function initDatabase() {
+  const { error } = await supabase.from('lottery_results').select('date').limit(1);
+  if (error && error.code === '42P01') {
+    console.log("Database table missing. Please ensure your Supabase table is created.");
+  }
+}
+
+async function load(){ 
+  const { data, error } = await supabase.from('lottery_results').select('*');
+  if(error) { console.error(error); return {}; }
+  const result = {};
+  if(data) {
+    data.forEach(row => {
+      result[row.date] = {
+        morning: row.morning,
+        afternoon: row.afternoon,
+        night: row.night
+      };
+    });
+  }
+  return result; 
+}
+
 function isAdmin(){ try{ return sessionStorage.getItem(AUTH)==="1"; }catch(e){ return memAuth; } }
 function setAdmin(v){ memAuth = v; try{ v ? sessionStorage.setItem(AUTH,"1") : sessionStorage.removeItem(AUTH); }catch(e){} }
 const $ = id => document.getElementById(id);
@@ -137,8 +165,8 @@ function histTable(data, withDelete){
   return h + "</table>";
 }
 
-function renderDisplay(){
-  const data = load(), dates = Object.keys(data).sort();
+async function renderDisplay(){
+  const data = await load(), dates = Object.keys(data).sort();
   const t = dates.length ? dates[dates.length-1] : todayStr(), row = data[t] || {};
   $("todayLabel").textContent = (t===todayStr() ? "Today, " : "Latest results, ") + pretty(t);
   $("todayDraws").innerHTML = DRAWS.map(x=>`<div class="draw"><div class="name">${x[1]}</div><div class="time">${x[2]}</div>${pair(row,x[0])}</div>`).join("");
@@ -146,18 +174,21 @@ function renderDisplay(){
   $("pubHist").innerHTML = histTable(past,false);
 }
 
-function renderAdmin(){
+async function renderAdmin(){
   const ok = isAdmin();
   $("login").classList.toggle("hide", ok);
   $("adminArea").classList.toggle("hide", !ok);
   if(!ok) return;
   if(!$("date").value) $("date").value = todayStr();
-  fillInputs();
-  $("adminHist").innerHTML = histTable(load(), true);
+  await fillInputs();
+  const data = await load();
+  $("adminHist").innerHTML = histTable(data, true);
 }
-function fillInputs(){
-  const row = load()[$("date").value] || {};
-  DRAWS.forEach(x=>{ const v=get(row,x[0]); $("in_"+x[0]+"_0").value=v[0]; $("in_"+x[0]+"_1").value=v[1]; });
+
+async function fillInputs(){
+  const data = await load();
+  const row = data[$("date").value] || {};
+  DRAWS.forEach(x=>{ const v=get(row,x[0]); $("in_"+x[0]+"_0").value=v[0]\vert{}\vert{}""; $("in_"+x[0]+"_1").value=v[1]||""; });
 }
 
 function route(){
@@ -178,7 +209,7 @@ $("logoutBtn").onclick = () => { setAdmin(false); renderAdmin(); };
 $("date").onchange = fillInputs;
 DRAWS.forEach(x => [0,1].forEach(i => $("in_"+x[0]+"_"+i).addEventListener("input", e => e.target.value = e.target.value.replace(/\D/g,"").slice(0,2))));
 
-$("saveBtn").onclick = () => {
+$("saveBtn").onclick = async () => {
   if(!isAdmin()) return;
   const msg = $("saveMsg"), date = $("date").value;
   if(!date){ msg.className="msg err"; msg.textContent="Choose a date first."; return; }
@@ -186,23 +217,36 @@ $("saveBtn").onclick = () => {
   for(const x of DRAWS){
     const v=[$("in_"+x[0]+"_0").value.trim(), $("in_"+x[0]+"_1").value.trim()];
     if(v[0]===""&&v[1]==="") continue;
-    if(!/^\d{2}$/.test(v[0])||!/^\d{2}$/.test(v[1])){ msg.className="msg err"; msg.textContent=x[1]+" needs both numbers, 2 digits each (00 to 99)."; return; }
+    if(!/^\d{2}$/.test(v[0])\vert{}\vert{}!/^\d{2}$/.test(v[1])){ msg.className="msg err"; msg.textContent=x[1]+" needs both numbers, 2 digits each (00 to 99)."; return; }
     vals[x[0]] = v;
   }
   if(!Object.keys(vals).length){ msg.className="msg err"; msg.textContent="Enter at least one number."; return; }
-  const data = load();
-  data[date] = Object.assign({}, data[date], vals);
-  save(data);
-  msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+".";
-  $("adminHist").innerHTML = histTable(data,true);
+  
+  msg.className="msg"; msg.textContent="Saving to database...";
+  
+  const payload = { date, ...vals };
+  const { error } = await supabase.from('lottery_results').upsert(payload);
+
+  if(error){
+    msg.className="msg err"; msg.textContent="Error saving data: " + error.message;
+  } else {
+    msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+".";
+    const data = await load();
+    $("adminHist").innerHTML = histTable(data,true);
+  }
 };
-$("adminHist").addEventListener("click", e => {
+
+$("adminHist").addEventListener("click", async e => {
   const d = e.target.dataset.del;
-  if(d && confirm("Delete all numbers for "+pretty(d)+"?")){ const data=load(); delete data[d]; save(data); renderAdmin(); }
+  if(d && confirm("Delete all numbers for "+pretty(d)+"?")){ 
+    await supabase.from('lottery_results').delete().eq('date', d);
+    renderAdmin(); 
+  }
 });
 
+// App Initialization
+initDatabase();
 window.addEventListener("hashchange", route);
-window.addEventListener("storage", route);
 if(!location.hash) location.hash = "#/display"; else route();
 </script>
 </body>
