@@ -12,9 +12,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","
 nav{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap}
 nav b{font-size:1.1rem}
 nav .links{display:flex;gap:8px}
-a.tab{color:var(--ink);text-decoration:none;padding:8px 14px;border:1px solid var(--line);border-radius:999px;font-size:.9rem;cursor:pointer}
-a.tab.on{background:var(--gold);color:#2a1d00;border-color:var(--gold);font-weight:700}
-a.tab:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+button.tab{background:transparent;color:var(--ink);text-decoration:none;padding:8px 14px;border:1px solid var(--line);border-radius:999px;font-size:.9rem;cursor:pointer}
+button.tab.on{background:var(--gold);color:#2a1d00;border-color:var(--gold);font-weight:700}
+button.tab:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 h1{font-size:1.6rem;margin:0 0 4px}
 h2{font-size:1.1rem;margin:28px 0 10px}
 .sub{color:var(--mute);margin:0 0 18px}
@@ -55,8 +55,8 @@ button.danger{color:#ffb4a6}
   <nav>
     <b>2D Lottery</b>
     <div class="links">
-      <a class="tab" id="tabDisplay" onclick="switchPage('display')">Results</a>
-      <a class="tab" id="tabAdmin" onclick="switchPage('admin')">Admin</a>
+      <button class="tab on" id="tabDisplay" onclick="showPage('display')">Results</button>
+      <button class="tab" id="tabAdmin" onclick="showPage('admin')">Admin</button>
     </div>
   </nav>
 
@@ -118,6 +118,20 @@ const DRAWS = [["morning","Morning","9:00 AM"],["afternoon","Afternoon","1:00 PM
 const AUTH = "lottery2d_admin", TOKEN_KEY = "lottery2d_ghtoken";
 let memAuth = false;
 
+function $ (id) { return document.getElementById(id); }
+
+function showPage(page) {
+  const isAdminPage = (page === 'admin');
+  $('pageAdmin').classList.toggle('hide', !isAdminPage);$('pageDisplay').classList.toggle('hide', isAdminPage);
+  $('tabAdmin').classList.toggle('on', isAdminPage);$('tabDisplay').classList.toggle('on', !isAdminPage);
+
+  if (isAdminPage) {
+    renderAdmin();
+  } else {
+    renderDisplay();
+  }
+}
+
 function toBase64(str) { return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1))); }
 
 async function fetchFromGitHub() {
@@ -177,7 +191,6 @@ function setAdmin(v, token=""){
   }catch(e){} 
 }
 
-const $ = id => document.getElementById(id);
 function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function pretty(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"}); }
 function get(row,k){ const v=row&&row[k]; if(!v) return ["",""]; return typeof v==="string" ? [v,""] : v; }
@@ -221,16 +234,6 @@ async function fillInputs(){
   DRAWS.forEach(x=>{ const v=get(row,x[0]); $("in_"+x[0]+"_0").value=v[0]\vert{}\vert{}""; $("in_"+x[0]+"_1").value=v[1]||""; });
 }
 
-function switchPage(page) {
-  location.hash = "#/" + page;
-  const admin = page === 'admin';
-  $("pageAdmin").classList.toggle("hide", !admin);
-  $("pageDisplay").classList.toggle("hide", admin);
-  $("tabAdmin").classList.toggle("on", admin);
-  $("tabDisplay").classList.toggle("on", !admin);
-  admin ? renderAdmin() : renderDisplay();
-}
-
 $("loginBtn").onclick = () => {
   const pin = $("pin").value;
   const token = $("ghToken").value.trim();
@@ -244,9 +247,6 @@ $("loginBtn").onclick = () => {
     $("loginMsg").textContent = "Wrong PIN. Try again.";
   }
 };
-
-$("pin").addEventListener("keydown", e => { if(e.key==="Enter") $("loginBtn").click(); });
-$("ghToken").addEventListener("keydown", e => { if(e.key==="Enter") $("loginBtn").click(); });
 
 $("logoutBtn").onclick = () => { setAdmin(false); renderAdmin(); };
 $("date").onchange = fillInputs;
@@ -292,11 +292,8 @@ $("adminHist").addEventListener("click", async e => {
   }
 });
 
-// Load correct tab on start
-window.onload = () => {
-  if (location.hash === "#/admin") switchPage('admin');
-  else switchPage('display');
-};
+// Initial load
+renderDisplay();
 </script>
 </body>
 </html>
