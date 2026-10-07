@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>2D Lottery Results</title>
-<!-- Supabase SDK loaded with fallback protection -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#10281f;--panel:#17382c;--line:#2c5a49;--ink:#f6efdc;--mute:#9fb8ab;--gold:#f0b429;--red:#e0553f;--ball:#fff8e6}
 *{box-sizing:border-box}
@@ -49,7 +47,6 @@ button.danger{color:#ffb4a6}
 .scroll{overflow-x:auto}
 .dash{color:var(--mute)}
 .hide{display:none}
-.status-bar{background:#0c1f18;border:1px solid var(--line);padding:8px 12px;border-radius:8px;margin-bottom:16px;font-size:0.85rem;color:var(--gold)}
 @media(max-width:560px){.draws{grid-template-columns:1fr}.draw{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;text-align:left}.draw .time{margin:0}}
 </style>
 </head>
@@ -63,17 +60,17 @@ button.danger{color:#ffb4a6}
     </div>
   </nav>
 
-  <div id="dbStatus" class="status-bar hide"></div>
-
   <!-- PAGE 1: ADMIN -->
   <section id="pageAdmin" class="hide">
     <div id="login" class="panel">
       <h1>Admin sign in</h1>
       <p class="sub">Only the admin can post winning numbers.</p>
       <label for="pin">Admin PIN</label>
-      <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+      <input id="pin" type="password" inputmode="numeric" autocomplete="off" style="margin-bottom:12px">
+      <label for="ghToken">GitHub Personal Access Token</label>
+      <input id="ghToken" type="password" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
       <p class="msg err" id="loginMsg"></p>
-      <button id="loginBtn">Sign in</button>
+      <button id="loginBtn" style="margin-top:12px">Sign in</button>
     </div>
 
     <div id="adminArea" class="hide">
@@ -103,7 +100,7 @@ button.danger{color:#ffb4a6}
   </section>
 
   <!-- PAGE 2: DISPLAY -->
-  <section id="pageDisplay">
+  <section id="pageDisplay" class="hide">
     <h1>Winning numbers</h1>
     <p class="sub" id="todayLabel">Loading latest results...</p>
     <div class="draws" id="todayDraws"></div>
@@ -114,76 +111,80 @@ button.danger{color:#ffb4a6}
 
 <script>
 // =========================================================================
-// REPLACE THESE 2 VALUES WITH YOUR EXACT SUPABASE CREDENTIALS
+// REPLACE THESE 2 VALUES WITH YOUR EXACT GITHUB INFO
 // =========================================================================
-const SUPABASE_URL = "YOUR_SUPABASE_URL_HERE";
-const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY_HERE";
+const GH_USER = "YOUR_GITHUB_USERNAME";
+const GH_REPO = "YOUR_REPOSITORY_NAME";
 // =========================================================================
 
 const ADMIN_PIN = "1234";
 const DRAWS = [["morning","Morning","9:00 AM"],["afternoon","Afternoon","1:00 PM"],["night","Night","8:00 PM"]];
-const KEY = "lottery2d_results", AUTH = "lottery2d_admin";
-let client = null, mem = {}, memAuth = false;
+const AUTH = "lottery2d_admin", TOKEN_KEY = "lottery2d_ghtoken";
+let memAuth = false;
 
-// Check if credentials are entered
-function isConfigured() {
-  return SUPABASE_URL.startsWith("http") && SUPABASE_KEY.length > 20;
-}
+// UTF-8 friendly Base64 helper for GitHub API
+function toBase64(str) { return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1))); }
+function fromBase64(str) { return decodeURIComponent(atob(str).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')); }
 
-// Initialize Supabase safely
-if (isConfigured() && window.supabase) {
+async function fetchFromGitHub() {
   try {
-    client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  } catch(e) {
-    console.error("Supabase init error:", e);
+    const res = await fetch(`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/main/results.json?cache=` + Date.now());
+    if (!res.ok) return {};
+    return await res.json();
+  } catch (e) {
+    console.error("Error fetching results.json:", e);
+    return {};
   }
 }
 
-function showStatus(text) {
-  const el = document.getElementById("dbStatus");
-  if(el) { el.classList.remove("hide"); el.textContent = text; }
-}
+async function saveToGitHub(newContent) {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  if (!token) throw new Error("GitHub token not found. Please log in again.");
 
-function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e) { return mem; }
-}
+  const fileUrl = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/results.json`;
 
-function saveLocal(d) {
-  mem = d;
-  try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e) {}
-}
-
-async function loadData() {
-  if (!client) {
-    showStatus("⚠️ Running in Local Storage Mode. Add your Supabase Keys in index.html so friends can view your results online.");
-    return loadLocal();
+  // Step 1: Get existing file SHA
+  const getRes = await fetch(fileUrl, {
+    headers: { Authorization: `token ${token}` }
+  });
+  
+  let sha = "";
+  if (getRes.ok) {
+    const fileData = await getRes.json();
+    sha = fileData.sha;
   }
 
-  try {
-    const { data, error } = await client.from('lottery_results').select('*');
-    if (error) {
-      showStatus("⚠️ Supabase connection error: " + error.message + " (Showing local data)");
-      return loadLocal();
-    }
-    const result = {};
-    if (data) {
-      data.forEach(row => {
-        result[row.date] = {
-          morning: row.morning,
-          afternoon: row.afternoon,
-          night: row.night
-        };
-      });
-    }
-    return result;
-  } catch(err) {
-    showStatus("⚠️ Database error. Displaying offline data.");
-    return loadLocal();
+  // Step 2: Push update
+  const body = {
+    message: "Update lottery results",
+    content: toBase64(JSON.stringify(newContent, null, 2)),
+    sha: sha || undefined
+  };
+
+  const putRes = await fetch(fileUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `token ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!putRes.ok) {
+    const err = await putRes.json();
+    throw new Error(err.message || "Failed to update file on GitHub.");
   }
 }
 
 function isAdmin(){ try{ return sessionStorage.getItem(AUTH)==="1"; }catch(e){ return memAuth; } }
-function setAdmin(v){ memAuth = v; try{ v ? sessionStorage.setItem(AUTH,"1") : sessionStorage.removeItem(AUTH); }catch(e){} }
+function setAdmin(v, token=""){ 
+  memAuth = v; 
+  try{ 
+    if(v) { sessionStorage.setItem(AUTH,"1"); sessionStorage.setItem(TOKEN_KEY, token); }
+    else { sessionStorage.removeItem(AUTH); sessionStorage.removeItem(TOKEN_KEY); }
+  }catch(e){} 
+}
+
 const $ = id => document.getElementById(id);
 function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function pretty(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"}); }
@@ -203,7 +204,7 @@ function histTable(data, withDelete){
 }
 
 async function renderDisplay(){
-  const data = await loadData(), dates = Object.keys(data).sort();
+  const data = await fetchFromGitHub(), dates = Object.keys(data).sort();
   const t = dates.length ? dates[dates.length-1] : todayStr(), row = data[t] || {};
   $("todayLabel").textContent = (t===todayStr() ? "Today, " : "Latest results, ") + pretty(t);
   $("todayDraws").innerHTML = DRAWS.map(x=>`<div class="draw"><div class="name">${x[1]}</div><div class="time">${x[2]}</div>${pair(row,x[0])}</div>`).join("");
@@ -218,18 +219,18 @@ async function renderAdmin(){
   if(!ok) return;
   if(!$("date").value) $("date").value = todayStr();
   await fillInputs();
-  const data = await loadData();
+  const data = await fetchFromGitHub();
   $("adminHist").innerHTML = histTable(data, true);
 }
 
 async function fillInputs(){
-  const data = await loadData();
+  const data = await fetchFromGitHub();
   const row = data[$("date").value] || {};
   DRAWS.forEach(x=>{ const v=get(row,x[0]); $("in_"+x[0]+"_0").value=v[0]\vert{}\vert{}""; $("in_"+x[0]+"_1").value=v[1]||""; });
 }
 
 function route(){
-  const admin = location.hash === "#/admin";
+  const admin = locationhash() === "#/admin";
   $("pageAdmin").classList.toggle("hide", !admin);
   $("pageDisplay").classList.toggle("hide", admin);
   $("tabAdmin").classList.toggle("on", admin);
@@ -237,11 +238,22 @@ function route(){
   admin ? renderAdmin() : renderDisplay();
 }
 
+function locationhash(){ return location.hash; }
+
 $("loginBtn").onclick = () => {
-  if($("pin").value === ADMIN_PIN){ setAdmin(true); $("pin").value=""; $("loginMsg").textContent=""; renderAdmin(); }
-  else $("loginMsg").textContent = "Wrong PIN. Try again.";
+  const pin = $("pin").value;
+  const token = $("ghToken").value.trim();
+  if(pin === ADMIN_PIN && token.startsWith("ghp_")){ 
+    setAdmin(true, token); 
+    $("pin").value=""; $("ghToken").value=""; $("loginMsg").textContent=""; 
+    renderAdmin(); 
+  } else if (!token.startsWith("ghp_")) {
+    $("loginMsg").textContent = "Please enter a valid GitHub Token starting with 'ghp_'.";
+  } else {
+    $("loginMsg").textContent = "Wrong PIN. Try again.";
+  }
 };
-$("pin").addEventListener("keydown", e => { if(e.key==="Enter") $("loginBtn").click(); });
+
 $("logoutBtn").onclick = () => { setAdmin(false); renderAdmin(); };
 $("date").onchange = fillInputs;
 DRAWS.forEach(x => [0,1].forEach(i => $("in_"+x[0]+"_"+i).addEventListener("input", e => e.target.value = e.target.value.replace(/\D/g,"").slice(0,2))));
@@ -259,37 +271,30 @@ $("saveBtn").onclick = async () => {
   }
   if(!Object.keys(vals).length){ msg.className="msg err"; msg.textContent="Enter at least one number."; return; }
   
-  msg.className="msg"; msg.textContent="Saving...";
+  msg.className="msg"; msg.textContent="Updating GitHub repository...";
 
-  if (client) {
-    const payload = { date, ...vals };
-    const { error } = await client.from('lottery_results').upsert(payload);
-    if(error){
-      msg.className="msg err"; msg.textContent="Error saving: " + error.message;
-      return;
-    }
-  } else {
-    const local = loadLocal();
-    local[date] = Object.assign({}, local[date], vals);
-    saveLocal(local);
+  try {
+    const data = await fetchFromGitHub();
+    data[date] = Object.assign({}, data[date], vals);
+    await saveToGitHub(data);
+    msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+". (GitHub Pages may take 30-60 seconds to update live site)";
+    $("adminHist").innerHTML = histTable(data,true);
+  } catch (err) {
+    msg.className="msg err"; msg.textContent="Error saving to GitHub: " + err.message;
   }
-
-  msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+".";
-  const data = await loadData();
-  $("adminHist").innerHTML = histTable(data,true);
 };
 
 $("adminHist").addEventListener("click", async e => {
   const d = e.target.dataset.del;
   if(d && confirm("Delete all numbers for "+pretty(d)+"?")){ 
-    if (client) {
-      await client.from('lottery_results').delete().eq('date', d);
-    } else {
-      const local = loadLocal();
-      delete local[d];
-      saveLocal(local);
+    try {
+      const data = await fetchFromGitHub();
+      delete data[d];
+      await saveToGitHub(data);
+      renderAdmin();
+    } catch(err) {
+      alert("Delete failed: " + err.message);
     }
-    renderAdmin(); 
   }
 });
 
