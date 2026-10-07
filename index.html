@@ -100,7 +100,7 @@ button.danger{color:#ffb4a6}
   </section>
 
   <!-- PAGE 2: DISPLAY -->
-  <section id="pageDisplay" class="hide">
+  <section id="pageDisplay">
     <h1>Winning numbers</h1>
     <p class="sub" id="todayLabel">Loading latest results...</p>
     <div class="draws" id="todayDraws"></div>
@@ -110,21 +110,16 @@ button.danger{color:#ffb4a6}
 </div>
 
 <script>
-// =========================================================================
-// REPLACE THESE 2 VALUES WITH YOUR EXACT GITHUB INFO
-// =========================================================================
-const GH_USER = "YOUR_GITHUB_USERNAME";
-const GH_REPO = "YOUR_REPOSITORY_NAME";
-// =========================================================================
+// Repository configuration
+const GH_USER = "ruzselnabong12345";
+const GH_REPO = "Trippings";
 
 const ADMIN_PIN = "1234";
 const DRAWS = [["morning","Morning","9:00 AM"],["afternoon","Afternoon","1:00 PM"],["night","Night","8:00 PM"]];
 const AUTH = "lottery2d_admin", TOKEN_KEY = "lottery2d_ghtoken";
 let memAuth = false;
 
-// UTF-8 friendly Base64 helper for GitHub API
 function toBase64(str) { return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1))); }
-function fromBase64(str) { return decodeURIComponent(atob(str).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')); }
 
 async function fetchFromGitHub() {
   try {
@@ -143,7 +138,6 @@ async function saveToGitHub(newContent) {
 
   const fileUrl = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/results.json`;
 
-  // Step 1: Get existing file SHA
   const getRes = await fetch(fileUrl, {
     headers: { Authorization: `token ${token}` }
   });
@@ -154,7 +148,6 @@ async function saveToGitHub(newContent) {
     sha = fileData.sha;
   }
 
-  // Step 2: Push update
   const body = {
     message: "Update lottery results",
     content: toBase64(JSON.stringify(newContent, null, 2)),
@@ -230,15 +223,13 @@ async function fillInputs(){
 }
 
 function route(){
-  const admin = locationhash() === "#/admin";
+  const admin = location.hash === "#/admin";
   $("pageAdmin").classList.toggle("hide", !admin);
   $("pageDisplay").classList.toggle("hide", admin);
   $("tabAdmin").classList.toggle("on", admin);
   $("tabDisplay").classList.toggle("on", !admin);
   admin ? renderAdmin() : renderDisplay();
 }
-
-function locationhash(){ return location.hash; }
 
 $("loginBtn").onclick = () => {
   const pin = $("pin").value;
@@ -253,6 +244,9 @@ $("loginBtn").onclick = () => {
     $("loginMsg").textContent = "Wrong PIN. Try again.";
   }
 };
+
+$("pin").addEventListener("keydown", e => { if(e.key==="Enter") $("loginBtn").click(); });
+$("ghToken").addEventListener("keydown", e => { if(e.key==="Enter") $("loginBtn").click(); });
 
 $("logoutBtn").onclick = () => { setAdmin(false); renderAdmin(); };
 $("date").onchange = fillInputs;
@@ -277,7 +271,7 @@ $("saveBtn").onclick = async () => {
     const data = await fetchFromGitHub();
     data[date] = Object.assign({}, data[date], vals);
     await saveToGitHub(data);
-    msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+". (GitHub Pages may take 30-60 seconds to update live site)";
+    msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+". (Changes take ~30 seconds to reflect on GitHub Pages)";
     $("adminHist").innerHTML = histTable(data,true);
   } catch (err) {
     msg.className="msg err"; msg.textContent="Error saving to GitHub: " + err.message;
