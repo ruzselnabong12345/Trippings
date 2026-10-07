@@ -12,7 +12,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","
 nav{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap}
 nav b{font-size:1.1rem}
 nav .links{display:flex;gap:8px}
-a.tab{color:var(--ink);text-decoration:none;padding:8px 14px;border:1px solid var(--line);border-radius:999px;font-size:.9rem}
+a.tab{color:var(--ink);text-decoration:none;padding:8px 14px;border:1px solid var(--line);border-radius:999px;font-size:.9rem;cursor:pointer}
 a.tab.on{background:var(--gold);color:#2a1d00;border-color:var(--gold);font-weight:700}
 a.tab:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 h1{font-size:1.6rem;margin:0 0 4px}
@@ -46,7 +46,7 @@ button.danger{color:#ffb4a6}
 .hist td:first-child,.hist th:first-child{text-align:left;font-size:.9rem}
 .scroll{overflow-x:auto}
 .dash{color:var(--mute)}
-.hide{display:none}
+.hide{display:none !important}
 @media(max-width:560px){.draws{grid-template-columns:1fr}.draw{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;text-align:left}.draw .time{margin:0}}
 </style>
 </head>
@@ -55,8 +55,8 @@ button.danger{color:#ffb4a6}
   <nav>
     <b>2D Lottery</b>
     <div class="links">
-      <a class="tab" id="tabDisplay" href="#/display">Results</a>
-      <a class="tab" id="tabAdmin" href="#/admin">Admin</a>
+      <a class="tab" id="tabDisplay" onclick="switchPage('display')">Results</a>
+      <a class="tab" id="tabAdmin" onclick="switchPage('admin')">Admin</a>
     </div>
   </nav>
 
@@ -110,7 +110,6 @@ button.danger{color:#ffb4a6}
 </div>
 
 <script>
-// Repository configuration
 const GH_USER = "ruzselnabong12345";
 const GH_REPO = "Trippings";
 
@@ -222,8 +221,9 @@ async function fillInputs(){
   DRAWS.forEach(x=>{ const v=get(row,x[0]); $("in_"+x[0]+"_0").value=v[0]\vert{}\vert{}""; $("in_"+x[0]+"_1").value=v[1]||""; });
 }
 
-function route(){
-  const admin = location.hash === "#/admin";
+function switchPage(page) {
+  location.hash = "#/" + page;
+  const admin = page === 'admin';
   $("pageAdmin").classList.toggle("hide", !admin);
   $("pageDisplay").classList.toggle("hide", admin);
   $("tabAdmin").classList.toggle("on", admin);
@@ -271,10 +271,10 @@ $("saveBtn").onclick = async () => {
     const data = await fetchFromGitHub();
     data[date] = Object.assign({}, data[date], vals);
     await saveToGitHub(data);
-    msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+". (Changes take ~30 seconds to reflect on GitHub Pages)";
+    msg.className="msg ok"; msg.textContent="Posted for "+pretty(date)+".";
     $("adminHist").innerHTML = histTable(data,true);
   } catch (err) {
-    msg.className="msg err"; msg.textContent="Error saving to GitHub: " + err.message;
+    msg.className="msg err"; msg.textContent="Error saving: " + err.message;
   }
 };
 
@@ -292,8 +292,11 @@ $("adminHist").addEventListener("click", async e => {
   }
 });
 
-window.addEventListener("hashchange", route);
-if(!location.hash) location.hash = "#/display"; else route();
+// Load correct tab on start
+window.onload = () => {
+  if (location.hash === "#/admin") switchPage('admin');
+  else switchPage('display');
+};
 </script>
 </body>
 </html>
